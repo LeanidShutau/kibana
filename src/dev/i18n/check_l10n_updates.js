@@ -16,7 +16,6 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-
 import path from 'path';
 import JSON5 from 'json5';
 
@@ -29,7 +28,7 @@ export async function checkUpdates(pluginPath, log) {
   let messagesCacheBuffer;
 
   try {
-    const resolvedPath = path.resolve(pluginPath, 'translations', 'messagesCache.json');
+    const resolvedPath = path.resolve(pluginPath, 'translations', 'messages_cache.json');
     await accessAsync(resolvedPath);
     messagesCacheBuffer = await readFileAsync(resolvedPath);
   } catch (_) {
@@ -53,7 +52,7 @@ export async function checkUpdates(pluginPath, log) {
   }
 
   await writeFileAsync(
-    path.resolve(pluginPath, 'translations', 'messagesCache.json'),
+    path.resolve(pluginPath, 'translations', 'messages_cache.json'),
     JSON5.stringify(defaultMessagesIds, null, 2)
   );
 }
