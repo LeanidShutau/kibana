@@ -21,13 +21,15 @@ import path from 'path';
 import { i18n } from '@kbn/i18n';
 import JSON5 from 'json5';
 import normalize from 'normalize-path';
+import { from } from 'rxjs';
+import { mergeMap, catchError } from 'rxjs/operators';
 
 import { extractHtmlMessages } from './extract_html_messages';
 import { extractCodeMessages } from './extract_code_messages';
 import { extractPugMessages } from './extract_pug_messages';
 import { extractHandlebarsMessages } from './extract_handlebars_messages';
-import { globAsync, readFileAsync, writeFileAsync } from './utils';
-import { paths, exclude } from '../../../.i18nrc.json';
+import { globAsync, readFileAsync, writeFileAsync, globBound } from './utils';
+import config from '../../../.i18nrc.json';
 
 const ESCAPE_SINGLE_QUOTE_REGEX = /\\([\s\S])|(')/g;
 
@@ -47,7 +49,7 @@ function normalizePath(inputPath) {
 }
 
 function filterPaths(inputPaths) {
-  const availablePaths = Object.values(paths);
+  const availablePaths = Object.values(config.paths);
   const pathsForExtraction = new Set();
 
   for (const inputPath of inputPaths) {
@@ -63,7 +65,7 @@ function filterPaths(inputPaths) {
       // path of the input path (empty normalized path corresponds to root or above).
       availablePaths
         .filter(path => !normalizedPath || path.startsWith(`${normalizedPath}/`))
-        .forEach(ePath => pathsForExtraction.add(ePath));
+        .forEach(path => pathsForExtraction.add(path));
     }
   }
 
@@ -73,7 +75,7 @@ function filterPaths(inputPaths) {
 export function validateMessageNamespace(id, filePath) {
   const normalizedPath = normalizePath(filePath);
 
-  const [expectedNamespace] = Object.entries(paths).find(([, pluginPath]) =>
+  const [expectedNamespace] = Object.entries(config.paths).find(([, pluginPath]) =>
     normalizedPath.startsWith(`${pluginPath}/`)
   );
 
@@ -83,7 +85,7 @@ See i18nrc.json for the list of supported namespaces.`);
   }
 }
 
-export async function extractMessagesFromPathToMap(inputPath, targetMap) {
+export async function parseMessagesFromPath(inputPath, processMessage) {
   const entries = await globAsync('*.{js,jsx,pug,ts,tsx,html,hbs,handlebars}', {
     cwd: inputPath,
     matchBase: true,
@@ -116,7 +118,7 @@ export async function extractMessagesFromPathToMap(inputPath, targetMap) {
       [hbsEntries, extractHandlebarsMessages],
     ].map(async ([entries, extractFunction]) => {
       const files = await Promise.all(
-        entries.filter(entry => !exclude.includes(normalizePath(entry))).map(async entry => {
+        entries.filter(entry => !config.exclude.includes(normalizePath(entry))).map(async entry => {
           return {
             name: entry,
             content: await readFileAsync(entry),
@@ -128,7 +130,7 @@ export async function extractMessagesFromPathToMap(inputPath, targetMap) {
         try {
           for (const [id, value] of extractFunction(content)) {
             validateMessageNamespace(id, name);
-            addMessageToMap(targetMap, id, value);
+            processMessage(id, value);
           }
         } catch (error) {
           throw new Error(`Error in ${name}\n${error.message || error}`);
@@ -180,8 +182,26 @@ function serializeToJson(defaultMessages) {
 export async function extractDefaultTranslations({ paths, output, outputFormat }) {
   const defaultMessagesMap = new Map();
 
+  function processMessage(id, value) {
+    addMessageToMap(defaultMessagesMap, id, value);
+  }
+
+  from(filterPaths(paths))
+    .pipe(
+      mergeMap(inputPath =>
+        globBound('*.{js,jsx,pug,ts,tsx,html,hbs,handlebars}', {
+          cwd: inputPath,
+          matchBase: true,
+        })
+      ),
+      catchError(error => {
+        throw error;
+      })
+    )
+    .subscribe();
+
   for (const inputPath of filterPaths(paths)) {
-    await extractMessagesFromPathToMap(inputPath, defaultMessagesMap);
+    await parseMessagesFromPath(inputPath, processMessage);
   }
 
   // messages shouldn't be extracted to a file if output is not supplied

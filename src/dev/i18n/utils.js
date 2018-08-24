@@ -27,6 +27,7 @@ import {
 import fs from 'fs';
 import glob from 'glob';
 import { promisify } from 'util';
+import { bindNodeCallback } from 'rxjs';
 
 const ESCAPE_LINE_BREAK_REGEX = /(?<!\\)\\\n/g;
 const HTML_LINE_BREAK_REGEX = /[\s]*\n[\s]*/g;
@@ -85,3 +86,5 @@ export function* traverseNodes(nodes) {
     }
   }
 }
+
+export const globBound = bindNodeCallback(glob);
